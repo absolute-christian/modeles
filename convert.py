@@ -6,6 +6,8 @@ import asyncio
 import os
 import tempfile
 import logging
+import re
+import shutil
 
 from mutagen.id3 import ID3, TIT2, TPE1, APIC, ID3NoHeaderError
 from mutagen.mp3 import MP3
@@ -50,6 +52,29 @@ class MP4toMP3Mod(loader.Module):
             return rc == 0
         except (FileNotFoundError, asyncio.TimeoutError):
             return False
+
+    async def _check_ytdlp(self) -> bool:
+        try:
+            rc, _, _ = await self._run("yt-dlp", "--version")
+            return rc == 0
+        except (FileNotFoundError, asyncio.TimeoutError):
+            return False
+
+    def _extract_yt_url(self, raw: str, reply_text: str | None = None) -> str | None:
+        blob = (raw or "").strip()
+        if not blob and reply_text:
+            blob = reply_text.strip()
+        if not blob:
+            return None
+
+        m = re.search(r"(https?://[^\s]+)", blob, re.IGNORECASE)
+        if not m:
+            return None
+        url = m.group(1).strip("()[]<>.,;\"'")
+        low = url.lower()
+        if "youtube.com/" in low or "youtu.be/" in low or "music.youtube.com/" in low:
+            return url
+        return None
 
     # ──────────────────────────────────────────────
     # .convert — конвертация MP4 → MP3
@@ -173,6 +198,118 @@ class MP4toMP3Mod(loader.Module):
             try:
                 os.rmdir(tmp_dir)
             except OSError:
+                pass
+
+    # ──────────────────────────────────────────────
+    # .ytmp3 — скачать YouTube -> MP3
+    # ──────────────────────────────────────────────
+    @loader.command()
+    async def ytmp3cmd(self, message):
+        """<url> - Скачать YouTube трек в MP3"""
+        reply = await message.get_reply_message()
+        raw = utils.get_args_raw(message) or ""
+        reply_text = getattr(reply, "raw_text", None) if reply else None
+        url = self._extract_yt_url(raw, reply_text)
+
+        if not url:
+            await utils.answer(
+                message,
+                f"{EMOJI_ERROR} <b>Укажи YouTube ссылку:</b>\n"
+                f"<code>.ytmp3 https://youtu.be/...</code>\n"
+                f"<i>или ответь на сообщение с ссылкой.</i>",
+            )
+            return
+
+        if not await self._check_ffmpeg():
+            await utils.answer(
+                message,
+                f"{EMOJI_ERROR} <b>ffmpeg не найден.</b>\nУстанови: <code>apt install ffmpeg</code>",
+            )
+            return
+
+        if not await self._check_ytdlp():
+            await utils.answer(
+                message,
+                f"{EMOJI_ERROR} <b>yt-dlp не найден.</b>\n"
+                f"Установи: <code>pip install -U yt-dlp</code>",
+            )
+            return
+
+        await utils.answer(message, f"{EMOJI_LOADING} <b>Скачиваю и конвертирую…</b>")
+
+        tmp_dir = tempfile.mkdtemp(prefix="ytmp3_")
+        out_tpl = os.path.join(tmp_dir, "%(title).200s [%(id)s].%(ext)s")
+        out_mp3 = None
+
+        try:
+            rc, stdout, stderr = await self._run(
+                "yt-dlp",
+                "--no-playlist",
+                "-x",
+                "--audio-format",
+                "mp3",
+                "--audio-quality",
+                "192K",
+                "--embed-thumbnail",
+                "--add-metadata",
+                "--print",
+                "after_move:filepath",
+                "-o",
+                out_tpl,
+                url,
+            )
+            if rc != 0:
+                err_tail = (stderr or stdout or "unknown error")[-900:]
+                await utils.answer(
+                    message,
+                    f"{EMOJI_ERROR} <b>Ошибка скачивания YouTube.</b>\n<code>{err_tail}</code>",
+                )
+                return
+
+            lines = [x.strip() for x in (stdout or "").splitlines() if x.strip()]
+            for ln in reversed(lines):
+                if ln.lower().endswith(".mp3") and os.path.exists(ln):
+                    out_mp3 = ln
+                    break
+
+            if not out_mp3:
+                for fname in os.listdir(tmp_dir):
+                    if fname.lower().endswith(".mp3"):
+                        out_mp3 = os.path.join(tmp_dir, fname)
+                        break
+
+            if not out_mp3 or not os.path.exists(out_mp3):
+                await utils.answer(
+                    message,
+                    f"{EMOJI_ERROR} <b>Не удалось найти итоговый MP3-файл.</b>",
+                )
+                return
+
+            await utils.answer(message, f"{EMOJI_LOADING} <b>Отправляю MP3…</b>")
+            await message.client.send_file(
+                message.chat_id,
+                out_mp3,
+                voice_note=False,
+                caption=f"{EMOJI_DONE} <b>Готово! YouTube → MP3</b>",
+                parse_mode="html",
+            )
+            await message.delete()
+
+        except asyncio.TimeoutError:
+            await utils.answer(
+                message,
+                f"{EMOJI_ERROR} <b>Таймаут.</b> Видео слишком длинное или сервер занят.",
+            )
+        except Exception as e:
+            logger.exception("ytmp3 error")
+            await utils.answer(
+                message,
+                f"{EMOJI_ERROR} <b>Неожиданная ошибка:</b> <code>{type(e).__name__}: {e}</code>",
+            )
+        finally:
+            try:
+                shutil.rmtree(tmp_dir, ignore_errors=True)
+            except Exception:
                 pass
 
     # ──────────────────────────────────────────────
