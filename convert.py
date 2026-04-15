@@ -1,4 +1,4 @@
-# meta developer: @your_username
+﻿# meta developer: @your_username
 # scope: heroku_only
 # requires: mutagen
 
@@ -181,36 +181,57 @@ class MP4toMP3Mod(loader.Module):
     @loader.command()
     async def settagcmd(self, message):
         """Ответь командой на аудио-сообщение. Запускает редактор тегов.
-        
+
         Использование:
-        .settag               — открыть меню
+        .settag
         .settag title Название
         .settag artist Исполнитель
-        .settag cover         — ответь на ФОТО вместе с командой чтобы сменить обложку
+        .settag cover  (ответом на фото)
+        .settag apply
         """
-        args = utils.get_args_raw(message).strip()
+        args = (utils.get_args_raw(message) or "").strip()
         reply = await message.get_reply_message()
+        chat_id = message.chat_id
 
-        # Проверка: ответ должен быть на аудио-файл
-        if not reply or not reply.audio and not (
-            reply.document and reply.document.mime_type == "audio/mpeg"
-        ):
-            await utils.answer(
-                message,
-                f"{EMOJI_ERROR} <b>Ответь на MP3-аудио командой .settag [title|artist|cover] [значение]</b>",
-            )
-            return
+        def is_mp3(msg) -> bool:
+            if not msg:
+                return False
+            if getattr(msg, "audio", None):
+                return True
+            doc = getattr(msg, "document", None)
+            if not doc:
+                return False
+            mime = str(getattr(doc, "mime_type", "") or "").lower()
+            return mime in {"audio/mpeg", "audio/mp3"}
+
+        session = self._edit_sessions.get(chat_id)
+
+        target_audio = reply if is_mp3(reply) else None
+        if not target_audio and session and session.get("reply_id"):
+            try:
+                saved = await message.client.get_messages(chat_id, ids=session["reply_id"])
+                if is_mp3(saved):
+                    target_audio = saved
+            except Exception:
+                target_audio = None
 
         if not args:
-            # Показать текущие теги
+            if not target_audio:
+                await utils.answer(
+                    message,
+                    f"{EMOJI_ERROR} <b>Ответь на MP3-аудио командой .settag</b>",
+                )
+                return
+
             await utils.answer(message, f"{EMOJI_LOADING} <b>Читаю теги…</b>")
             tmp = tempfile.mktemp(suffix=".mp3")
             try:
-                await reply.download_media(tmp)
+                await target_audio.download_media(tmp)
                 audio = MP3(tmp, ID3=ID3)
-                title  = str(audio.tags.get("TIT2", "—"))
-                artist = str(audio.tags.get("TPE1", "—"))
-                has_cover = "APIC:" in audio.tags or any(k.startswith("APIC") for k in audio.tags.keys())
+                title = str(audio.tags.get("TIT2", "—")) if audio.tags else "—"
+                artist = str(audio.tags.get("TPE1", "—")) if audio.tags else "—"
+                has_cover = bool(audio.tags and any(str(k).startswith("APIC") for k in audio.tags.keys()))
+
                 await utils.answer(
                     message,
                     f"🎵 <b>Текущие теги:</b>\n"
@@ -221,7 +242,7 @@ class MP4toMP3Mod(loader.Module):
                     f"<code>.settag title Название</code>\n"
                     f"<code>.settag artist Исполнитель</code>\n"
                     f"<code>.settag cover</code> — ответь на фото\n"
-                    f"<code>.settag apply</code> — применить и получить новый файл",
+                    f"<code>.settag apply</code> — применить",
                 )
             except Exception as e:
                 await utils.answer(message, f"{EMOJI_ERROR} <b>Ошибка чтения тегов:</b> <code>{e}</code>")
@@ -232,48 +253,55 @@ class MP4toMP3Mod(loader.Module):
                     pass
             return
 
-        # Парсим команду
         parts = args.split(None, 1)
         cmd = parts[0].lower()
         value = parts[1] if len(parts) > 1 else ""
-        chat_id = message.chat_id
 
         if cmd == "title":
             if not value:
                 await utils.answer(message, f"{EMOJI_ERROR} <b>Укажи название:</b> <code>.settag title Название</code>")
                 return
-            session = self._edit_sessions.setdefault(chat_id, {"reply_id": reply.id})
+            if not target_audio:
+                await utils.answer(message, f"{EMOJI_ERROR} <b>Сначала ответь на MP3 командой .settag title ...</b>")
+                return
+            session = self._edit_sessions.setdefault(chat_id, {"reply_id": target_audio.id})
+            session["reply_id"] = target_audio.id
             session["title"] = value
-            session["reply_id"] = reply.id
             await utils.answer(message, f"{EMOJI_DONE} <b>Название сохранено:</b> {value}\nПрименить: <code>.settag apply</code>")
+            return
 
-        elif cmd == "artist":
+        if cmd == "artist":
             if not value:
                 await utils.answer(message, f"{EMOJI_ERROR} <b>Укажи исполнителя:</b> <code>.settag artist Исполнитель</code>")
                 return
-            session = self._edit_sessions.setdefault(chat_id, {"reply_id": reply.id})
-            session["artist"] = value
-            session["reply_id"] = reply.id
-            await utils.answer(message, f"{EMOJI_DONE} <b>Исполнитель сохранён:</b> {value}\nПрименить: <code>.settag apply</code>")
-
-        elif cmd == "cover":
-            # Ищем фото: либо в сообщении с командой, либо в реплае на фото
-            photo_msg = message if message.photo else reply
-            if not photo_msg.photo:
-                await utils.answer(
-                    message,
-                    f"{EMOJI_ERROR} <b>Ответь командой .settag cover на фото</b>",
-                )
+            if not target_audio:
+                await utils.answer(message, f"{EMOJI_ERROR} <b>Сначала ответь на MP3 командой .settag artist ...</b>")
                 return
+            session = self._edit_sessions.setdefault(chat_id, {"reply_id": target_audio.id})
+            session["reply_id"] = target_audio.id
+            session["artist"] = value
+            await utils.answer(message, f"{EMOJI_DONE} <b>Исполнитель сохранён:</b> {value}\nПрименить: <code>.settag apply</code>")
+            return
+
+        if cmd == "cover":
+            if not target_audio:
+                await utils.answer(message, f"{EMOJI_ERROR} <b>Сначала привяжи MP3: .settag title ... (ответом на аудио)</b>")
+                return
+
+            photo_msg = message if getattr(message, "photo", None) else (reply if reply and getattr(reply, "photo", None) else None)
+            if not photo_msg or not getattr(photo_msg, "photo", None):
+                await utils.answer(message, f"{EMOJI_ERROR} <b>Ответь командой .settag cover на фото</b>")
+                return
+
             await utils.answer(message, f"{EMOJI_LOADING} <b>Скачиваю обложку…</b>")
             tmp_cover = tempfile.mktemp(suffix=".jpg")
             try:
                 await photo_msg.download_media(tmp_cover)
                 with open(tmp_cover, "rb") as f:
                     cover_data = f.read()
-                session = self._edit_sessions.setdefault(chat_id, {"reply_id": reply.id})
+                session = self._edit_sessions.setdefault(chat_id, {"reply_id": target_audio.id})
+                session["reply_id"] = target_audio.id
                 session["cover"] = cover_data
-                session["reply_id"] = reply.id
                 await utils.answer(message, f"{EMOJI_DONE} <b>Обложка сохранена.</b>\nПрименить: <code>.settag apply</code>")
             except Exception as e:
                 await utils.answer(message, f"{EMOJI_ERROR} <b>Ошибка:</b> <code>{e}</code>")
@@ -282,33 +310,38 @@ class MP4toMP3Mod(loader.Module):
                     os.remove(tmp_cover)
                 except OSError:
                     pass
+            return
 
-        elif cmd == "apply":
+        if cmd == "apply":
             session = self._edit_sessions.get(chat_id)
-            if not session or session.get("reply_id") != reply.id:
+            if not target_audio or not session or session.get("reply_id") != target_audio.id:
                 await utils.answer(
                     message,
-                    f"{EMOJI_ERROR} <b>Нет несохранённых изменений для этого аудио.</b>\n"
+                    f"{EMOJI_ERROR} <b>Нет сохранённых изменений для этого аудио.</b>\n"
                     f"Сначала задай <code>.settag title</code> / <code>.settag artist</code> / <code>.settag cover</code>",
                 )
                 return
 
             await utils.answer(message, f"{EMOJI_LOADING} <b>Применяю теги…</b>")
             tmp_mp3 = tempfile.mktemp(suffix=".mp3")
+            thumb_tmp = None
             try:
-                await reply.download_media(tmp_mp3)
+                await target_audio.download_media(tmp_mp3)
                 try:
                     audio = MP3(tmp_mp3, ID3=ID3)
                 except ID3NoHeaderError:
                     audio = MP3(tmp_mp3)
                     audio.add_tags()
 
+                if audio.tags is None:
+                    audio.add_tags()
+
+                # Меняем только те поля, которые пользователь указал; остальные сохраняются как были.
                 if "title" in session:
-                    audio.tags.add(TIT2(encoding=3, text=session["title"]))
+                    audio.tags["TIT2"] = TIT2(encoding=3, text=session["title"])
                 if "artist" in session:
-                    audio.tags.add(TPE1(encoding=3, text=session["artist"]))
+                    audio.tags["TPE1"] = TPE1(encoding=3, text=session["artist"])
                 if "cover" in session:
-                    # Удалить старые APIC-теги
                     audio.tags.delall("APIC")
                     audio.tags.add(
                         APIC(
@@ -319,14 +352,24 @@ class MP4toMP3Mod(loader.Module):
                             data=session["cover"],
                         )
                     )
+
                 audio.save()
 
-                # Подготовить превью обложки для thumb
-                thumb_tmp = None
                 if "cover" in session:
                     thumb_tmp = tempfile.mktemp(suffix=".jpg")
                     with open(thumb_tmp, "wb") as f:
                         f.write(session["cover"])
+                else:
+                    apic_frame = None
+                    if audio.tags:
+                        for key, frame in audio.tags.items():
+                            if str(key).startswith("APIC"):
+                                apic_frame = frame
+                                break
+                    if apic_frame and getattr(apic_frame, "data", None):
+                        thumb_tmp = tempfile.mktemp(suffix=".jpg")
+                        with open(thumb_tmp, "wb") as f:
+                            f.write(apic_frame.data)
 
                 thumb_arg = open(thumb_tmp, "rb") if thumb_tmp else None
                 try:
@@ -342,7 +385,6 @@ class MP4toMP3Mod(loader.Module):
                     if thumb_arg:
                         thumb_arg.close()
 
-                # Чистим сессию
                 self._edit_sessions.pop(chat_id, None)
                 await message.delete()
 
@@ -354,15 +396,16 @@ class MP4toMP3Mod(loader.Module):
                     os.remove(tmp_mp3)
                 except OSError:
                     pass
-                if "thumb_tmp" in dir() and thumb_tmp:
+                if thumb_tmp:
                     try:
                         os.remove(thumb_tmp)
                     except OSError:
                         pass
+            return
 
-        else:
-            await utils.answer(
-                message,
-                f"{EMOJI_ERROR} <b>Неизвестная команда.</b>\n"
-                f"Доступно: <code>title</code>, <code>artist</code>, <code>cover</code>, <code>apply</code>",
-            )
+        await utils.answer(
+            message,
+            f"{EMOJI_ERROR} <b>Неизвестная команда.</b>\n"
+            f"Доступно: <code>title</code>, <code>artist</code>, <code>cover</code>, <code>apply</code>",
+        )
+
