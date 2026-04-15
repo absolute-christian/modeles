@@ -6,10 +6,6 @@ import asyncio
 import os
 import tempfile
 import logging
-import re
-import shutil
-import sys
-import importlib
 
 from mutagen.id3 import ID3, TIT2, TPE1, APIC, ID3NoHeaderError
 from mutagen.mp3 import MP3
@@ -26,37 +22,16 @@ EMOJI_TAG      = '<tg-emoji emoji-id="5269764708566599413">🤔</tg-emoji>'
 EMOJI_COVER    = '<tg-emoji emoji-id="5422814644093868925">👨‍💻</tg-emoji>'
 EMOJI_COMMANDS = '<tg-emoji emoji-id="5377835775180155940">❤️</tg-emoji>'
 EMOJI_MUSIC    = '<tg-emoji emoji-id="5312445916005826522">📋</tg-emoji>'
-COOKIE_HELP_VIDEO_URL = "https://your-video-link-here"
 
 
 @loader.tds
 class ConverterMod(loader.Module):
-    """Конвертит мп4 в мп3. Умеет скачивать звук видоса ютуба (по ссылке)."""
+    """Конвертит мп4 в мп3 и редактирует теги."""
 
     strings = {"name": "Converter"}
 
     def __init__(self):
         self._edit_sessions: dict[int, dict] = {}  # chat_id -> session
-        self.config = loader.ModuleConfig(
-            loader.ConfigValue(
-                "yt_cookies_path",
-                "",
-                lambda: "Путь к cookies.txt для YouTube (опционально)",
-                validator=loader.validators.String(),
-            ),
-            loader.ConfigValue(
-                "yt_js_runtimes",
-                "node,deno",
-                lambda: "JS runtime для yt-dlp (--js-runtimes), например: node,deno",
-                validator=loader.validators.String(),
-            ),
-            loader.ConfigValue(
-                "yt_extractor_args",
-                "youtube:player_client=android,web",
-                lambda: "yt-dlp --extractor-args для YouTube",
-                validator=loader.validators.String(),
-            ),
-        )
 
     async def _run(self, *args) -> tuple[int, str, str]:
         proc = await asyncio.create_subprocess_exec(
@@ -73,127 +48,6 @@ class ConverterMod(loader.Module):
             return rc == 0
         except (FileNotFoundError, asyncio.TimeoutError):
             return False
-
-    async def _check_ytdlp(self) -> bool:
-        return (await self._resolve_ytdlp_cmd()) is not None
-
-    async def _resolve_ytdlp_cmd(self) -> list[str] | None:
-        candidates: list[list[str]] = []
-        bin_path = shutil.which("yt-dlp")
-        if bin_path:
-            candidates.append([bin_path])
-        candidates.append([sys.executable, "-m", "yt_dlp"])
-
-        for cmd in candidates:
-            try:
-                rc, _, _ = await self._run(*cmd, "--version")
-                if rc == 0:
-                    return cmd
-            except (FileNotFoundError, asyncio.TimeoutError):
-                continue
-        return None
-
-    def _build_ytdlp_cmd(self, ytdlp_cmd: list[str], out_tpl: str, url: str) -> list[str]:
-        cmd = [
-            *ytdlp_cmd,
-            "--no-playlist",
-            "-x",
-            "--audio-format",
-            "mp3",
-            "--audio-quality",
-            "192K",
-            "--embed-thumbnail",
-            "--add-metadata",
-            "--print",
-            "after_move:filepath",
-        ]
-
-        js_runtimes = str(self.config["yt_js_runtimes"] or "").strip()
-        if js_runtimes:
-            cmd.extend(["--js-runtimes", js_runtimes])
-
-        extractor_args = str(self.config["yt_extractor_args"] or "").strip()
-        if extractor_args:
-            cmd.extend(["--extractor-args", extractor_args])
-
-        cookies_path = str(self.config["yt_cookies_path"] or "").strip()
-        if cookies_path and os.path.isfile(cookies_path):
-            cmd.extend(["--cookies", cookies_path])
-
-        cmd.extend(["-o", out_tpl, url])
-        return cmd
-
-    def _build_ytdlp_opts(self, out_tpl: str) -> dict:
-        opts: dict = {
-            "format": "bestaudio",
-            "addmetadata": True,
-            "prefer_ffmpeg": True,
-            "geo_bypass": True,
-            "nocheckcertificate": True,
-            "noplaylist": True,
-            "quiet": True,
-            "outtmpl": out_tpl,
-            "extractor_args": {
-                "youtube": {
-                    "player_client": ["android", "web"],
-                }
-            },
-            "postprocessors": [
-                {
-                    "key": "FFmpegExtractAudio",
-                    "preferredcodec": "mp3",
-                    "preferredquality": "192",
-                },
-                {"key": "EmbedThumbnail"},
-                {"key": "FFmpegMetadata"},
-            ],
-        }
-        cookies_path = str(self.config["yt_cookies_path"] or "").strip()
-        if cookies_path and os.path.isfile(cookies_path):
-            opts["cookiefile"] = cookies_path
-        return opts
-
-    async def _download_with_ytdlp_lib(
-        self,
-        url: str,
-        tmp_dir: str,
-        out_tpl: str,
-    ) -> tuple[bool, str]:
-        def _job() -> tuple[bool, str]:
-            try:
-                yt_dlp = importlib.import_module("yt_dlp")
-            except Exception as e:
-                return False, f"yt_dlp import error: {e}"
-
-            opts = self._build_ytdlp_opts(out_tpl)
-            try:
-                with yt_dlp.YoutubeDL(opts) as ydl:
-                    ydl.extract_info(url, download=True)
-            except Exception as e:
-                return False, str(e)
-
-            for fname in os.listdir(tmp_dir):
-                if fname.lower().endswith(".mp3"):
-                    return True, os.path.join(tmp_dir, fname)
-            return False, "no mp3 produced"
-
-        return await utils.run_sync(_job)
-
-    def _extract_yt_url(self, raw: str, reply_text: str | None = None) -> str | None:
-        blob = (raw or "").strip()
-        if not blob and reply_text:
-            blob = reply_text.strip()
-        if not blob:
-            return None
-
-        m = re.search(r"(https?://[^\s]+)", blob, re.IGNORECASE)
-        if not m:
-            return None
-        url = m.group(1).strip("()[]<>.,;\"'")
-        low = url.lower()
-        if "youtube.com/" in low or "youtu.be/" in low or "music.youtube.com/" in low:
-            return url
-        return None
 
     # .convert - конвертирует MP4 в MP3
     @loader.command()
@@ -310,124 +164,6 @@ class ConverterMod(loader.Module):
                 os.rmdir(tmp_dir)
             except OSError:
                 pass
-
-    # .ytd - скачивает MP3 из YouTube
-    @loader.command()
-    async def ytdcmd(self, message):
-        """Скачивает звук видоса с ютуба"""
-        reply = await message.get_reply_message()
-        raw = utils.get_args_raw(message) or ""
-        reply_text = getattr(reply, "raw_text", None) if reply else None
-        url = self._extract_yt_url(raw, reply_text)
-
-        if not url:
-            await utils.answer(
-                message,
-                f"{EMOJI_ERROR} <b>Укажи ссылку YouTube:</b>\n"
-                f"<code>.ytd https://youtu.be/...</code>\n"
-                f"<i>или ответь командой на сообщение с ссылкой.</i>",
-            )
-            return
-
-        if not await self._check_ffmpeg():
-            await utils.answer(
-                message,
-                f"{EMOJI_ERROR} <b>Библиотека ffmpeg не найден.</b>",
-            )
-            return
-
-        await utils.answer(message, f"{EMOJI_LOADING} <b>Пока работаю, попей кофе. Шучу... {EMOJI_SMEX}</b>")
-
-        tmp_dir = tempfile.mkdtemp(prefix="ytmp3_")
-        out_tpl = os.path.join(tmp_dir, "%(title).200s [%(id)s].%(ext)s")
-        out_mp3 = None
-
-        try:
-            # 1) Основной путь: python API yt_dlp (как в классическом ytdl модуле)
-            ok_lib, payload = await self._download_with_ytdlp_lib(url, tmp_dir, out_tpl)
-            if ok_lib:
-                out_mp3 = payload
-            else:
-                # 2) Резерв: CLI yt-dlp
-                ytdlp_cmd = await self._resolve_ytdlp_cmd()
-                if not ytdlp_cmd:
-                    await utils.answer(
-                        message,
-                        f"{EMOJI_ERROR} <b>yt-dlp не найден.</b>\n"
-                        f"Установи в окружение юзербота: <code>python -m pip install -U yt-dlp</code>",
-                    )
-                    return
-                cmd = self._build_ytdlp_cmd(ytdlp_cmd, out_tpl, url)
-                rc, stdout, stderr = await self._run(*cmd)
-                if rc != 0:
-                    err_tail = (stderr or stdout or payload or "unknown error")[-900:]
-                    if "Sign in to confirm you" in err_tail or "not a bot" in err_tail:
-                        err_tail += (
-                            "\n\nПодсказка: YouTube требует cookies.\n"
-                            "Экспортируй cookies.txt и укажи путь в .config Converter -> yt_cookies_path\n"
-                            "И открой .chelp"
-                        )
-                    await utils.answer(
-                        message,
-                        f"{EMOJI_ERROR} <b>Ошибка скачивания YouTube.</b>\n<code>{err_tail}</code>",
-                    )
-                    return
-
-                lines = [x.strip() for x in (stdout or "").splitlines() if x.strip()]
-                for ln in reversed(lines):
-                    if ln.lower().endswith(".mp3") and os.path.exists(ln):
-                        out_mp3 = ln
-                        break
-
-                if not out_mp3:
-                    for fname in os.listdir(tmp_dir):
-                        if fname.lower().endswith(".mp3"):
-                            out_mp3 = os.path.join(tmp_dir, fname)
-                            break
-
-            if not out_mp3 or not os.path.exists(out_mp3):
-                await utils.answer(
-                    message,
-                    f"{EMOJI_ERROR} <b>Не удалось найти итоговый мп3-файл.</b>",
-                )
-                return
-
-            await utils.answer(message, f"{EMOJI_LOADING} <b>Пока отправляю мп3, попей воды. Шучу... {EMOJI_SMEX}</b>")
-            await message.client.send_file(
-                message.chat_id,
-                out_mp3,
-                voice_note=False,
-                caption=f"{EMOJI_DONE} <b>Готово. Скачал видео из ютуба и конвертировал в мп3</b>",
-                parse_mode="html",
-            )
-            await message.delete()
-
-        except asyncio.TimeoutError:
-            await utils.answer(
-                message,
-                f"{EMOJI_ERROR} <b>Бляя...</b> Видео слишком длинное или сервер занят.",
-            )
-        except Exception as e:
-            logger.exception("ytd error")
-            await utils.answer(
-                message,
-                f"{EMOJI_ERROR} <b>Неожиданная ошибка:</b> <code>{type(e).__name__}: {e}</code>",
-            )
-        finally:
-            try:
-                shutil.rmtree(tmp_dir, ignore_errors=True)
-            except Exception:
-                pass
-
-    # .chelp - показывает ссылку на гайд по cookies
-    @loader.command()
-    async def chelpcmd(self, message):
-        """Показывает видео-гайд по получению cookies."""
-        await utils.answer(
-            message,
-            f"{EMOJI_COMMANDS} <b>Гайд по cookies для YouTube:</b>\n"
-            f"<a href=\"{COOKIE_HELP_VIDEO_URL}\">{COOKIE_HELP_VIDEO_URL}</a>",
-        )
 
     # .settag - редактирует теги MP3
     @loader.command()
