@@ -25,6 +25,7 @@ EMOJI_TAG      = '<tg-emoji emoji-id="5269764708566599413">🤔</tg-emoji>'
 EMOJI_COVER    = '<tg-emoji emoji-id="5422814644093868925">👨‍💻</tg-emoji>'
 EMOJI_COMMANDS = '<tg-emoji emoji-id="5377835775180155940">❤️</tg-emoji>'
 EMOJI_MUSIC    = '<tg-emoji emoji-id="5312445916005826522">📋</tg-emoji>'
+COOKIE_HELP_VIDEO_URL = "https://your-video-link-here"
 
 
 @loader.tds
@@ -253,9 +254,9 @@ class ConverterMod(loader.Module):
             except OSError:
                 pass
 
-    # .ytmp3 - скачивает MP3 из YouTube
+    # .ytd - скачивает MP3 из YouTube
     @loader.command()
-    async def ytmp3cmd(self, message):
+    async def ytdcmd(self, message):
         """Скачивает звук видоса с ютуба"""
         reply = await message.get_reply_message()
         raw = utils.get_args_raw(message) or ""
@@ -266,7 +267,7 @@ class ConverterMod(loader.Module):
             await utils.answer(
                 message,
                 f"{EMOJI_ERROR} <b>Укажи ссылку YouTube:</b>\n"
-                f"<code>.ytmp3 https://youtu.be/...</code>\n"
+                f"<code>.ytd https://youtu.be/...</code>\n"
                 f"<i>или ответь командой на сообщение с ссылкой.</i>",
             )
             return
@@ -344,7 +345,7 @@ class ConverterMod(loader.Module):
                 f"{EMOJI_ERROR} <b>Бляя...</b> Видео слишком длинное или сервер занят.",
             )
         except Exception as e:
-            logger.exception("ytmp3 error")
+            logger.exception("ytd error")
             await utils.answer(
                 message,
                 f"{EMOJI_ERROR} <b>Неожиданная ошибка:</b> <code>{type(e).__name__}: {e}</code>",
@@ -354,6 +355,16 @@ class ConverterMod(loader.Module):
                 shutil.rmtree(tmp_dir, ignore_errors=True)
             except Exception:
                 pass
+
+    # .chelp - показывает ссылку на гайд по cookies
+    @loader.command()
+    async def chelpcmd(self, message):
+        """Показывает видео-гайд по получению cookies."""
+        await utils.answer(
+            message,
+            f"{EMOJI_COMMANDS} <b>Гайд по cookies для YouTube:</b>\n"
+            f"<a href=\"{COOKIE_HELP_VIDEO_URL}\">{COOKIE_HELP_VIDEO_URL}</a>",
+        )
 
     # .settag - редактирует теги MP3
     @loader.command()
