@@ -35,6 +35,26 @@ class ConverterMod(loader.Module):
 
     def __init__(self):
         self._edit_sessions: dict[int, dict] = {}  # chat_id -> session
+        self.config = loader.ModuleConfig(
+            loader.ConfigValue(
+                "yt_cookies_path",
+                "",
+                lambda: "Путь к cookies.txt для YouTube (опционально)",
+                validator=loader.validators.String(),
+            ),
+            loader.ConfigValue(
+                "yt_js_runtimes",
+                "node,deno",
+                lambda: "JS runtime для yt-dlp (--js-runtimes), например: node,deno",
+                validator=loader.validators.String(),
+            ),
+            loader.ConfigValue(
+                "yt_extractor_args",
+                "youtube:player_client=android,web",
+                lambda: "yt-dlp --extractor-args для YouTube",
+                validator=loader.validators.String(),
+            ),
+        )
 
     async def _run(self, *args) -> tuple[int, str, str]:
         proc = await asyncio.create_subprocess_exec(
@@ -70,6 +90,36 @@ class ConverterMod(loader.Module):
             except (FileNotFoundError, asyncio.TimeoutError):
                 continue
         return None
+
+    def _build_ytdlp_cmd(self, ytdlp_cmd: list[str], out_tpl: str, url: str) -> list[str]:
+        cmd = [
+            *ytdlp_cmd,
+            "--no-playlist",
+            "-x",
+            "--audio-format",
+            "mp3",
+            "--audio-quality",
+            "192K",
+            "--embed-thumbnail",
+            "--add-metadata",
+            "--print",
+            "after_move:filepath",
+        ]
+
+        js_runtimes = str(self.config["yt_js_runtimes"] or "").strip()
+        if js_runtimes:
+            cmd.extend(["--js-runtimes", js_runtimes])
+
+        extractor_args = str(self.config["yt_extractor_args"] or "").strip()
+        if extractor_args:
+            cmd.extend(["--extractor-args", extractor_args])
+
+        cookies_path = str(self.config["yt_cookies_path"] or "").strip()
+        if cookies_path and os.path.isfile(cookies_path):
+            cmd.extend(["--cookies", cookies_path])
+
+        cmd.extend(["-o", out_tpl, url])
+        return cmd
 
     def _extract_yt_url(self, raw: str, reply_text: str | None = None) -> str | None:
         blob = (raw or "").strip()
@@ -244,25 +294,15 @@ class ConverterMod(loader.Module):
         out_mp3 = None
 
         try:
-            cmd = [
-                *ytdlp_cmd,
-                "--no-playlist",
-                "-x",
-                "--audio-format",
-                "mp3",
-                "--audio-quality",
-                "192K",
-                "--embed-thumbnail",
-                "--add-metadata",
-                "--print",
-                "after_move:filepath",
-                "-o",
-                out_tpl,
-                url,
-            ]
+            cmd = self._build_ytdlp_cmd(ytdlp_cmd, out_tpl, url)
             rc, stdout, stderr = await self._run(*cmd)
             if rc != 0:
                 err_tail = (stderr or stdout or "unknown error")[-900:]
+                if "Sign in to confirm you" in err_tail or "not a bot" in err_tail:
+                    err_tail += (
+                        "\n\nПодсказка: YouTube требует cookies.\n"
+                        "Экспортируй cookies.txt и укажи путь в .config Converter -> yt_cookies_path"
+                    )
                 await utils.answer(
                     message,
                     f"{EMOJI_ERROR} <b>Ошибка скачивания YouTube.</b>\n<code>{err_tail}</code>",
