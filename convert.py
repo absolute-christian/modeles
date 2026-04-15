@@ -223,6 +223,11 @@ class MP4toMP3Mod(loader.Module):
                 )
                 return
 
+            # Фиксируем текущий трек в сессии, чтобы дальше можно было
+            # делать `.settag cover` ответом на фото без повторного реплая на MP3.
+            session = self._edit_sessions.setdefault(chat_id, {"reply_id": target_audio.id})
+            session["reply_id"] = target_audio.id
+
             await utils.answer(message, f"{EMOJI_LOADING} <b>Читаю теги…</b>")
             tmp = tempfile.mktemp(suffix=".mp3")
             try:
