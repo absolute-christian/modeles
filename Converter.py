@@ -9,6 +9,7 @@ import logging
 import re
 import shutil
 import sys
+import importlib
 
 from mutagen.id3 import ID3, TIT2, TPE1, APIC, ID3NoHeaderError
 from mutagen.mp3 import MP3
@@ -121,6 +122,62 @@ class ConverterMod(loader.Module):
 
         cmd.extend(["-o", out_tpl, url])
         return cmd
+
+    def _build_ytdlp_opts(self, out_tpl: str) -> dict[str, typing.Any]:
+        opts: dict[str, typing.Any] = {
+            "format": "bestaudio",
+            "addmetadata": True,
+            "prefer_ffmpeg": True,
+            "geo_bypass": True,
+            "nocheckcertificate": True,
+            "noplaylist": True,
+            "quiet": True,
+            "outtmpl": out_tpl,
+            "extractor_args": {
+                "youtube": {
+                    "player_client": ["android", "web"],
+                }
+            },
+            "postprocessors": [
+                {
+                    "key": "FFmpegExtractAudio",
+                    "preferredcodec": "mp3",
+                    "preferredquality": "192",
+                },
+                {"key": "EmbedThumbnail"},
+                {"key": "FFmpegMetadata"},
+            ],
+        }
+        cookies_path = str(self.config["yt_cookies_path"] or "").strip()
+        if cookies_path and os.path.isfile(cookies_path):
+            opts["cookiefile"] = cookies_path
+        return opts
+
+    async def _download_with_ytdlp_lib(
+        self,
+        url: str,
+        tmp_dir: str,
+        out_tpl: str,
+    ) -> tuple[bool, str]:
+        def _job() -> tuple[bool, str]:
+            try:
+                yt_dlp = importlib.import_module("yt_dlp")
+            except Exception as e:
+                return False, f"yt_dlp import error: {e}"
+
+            opts = self._build_ytdlp_opts(out_tpl)
+            try:
+                with yt_dlp.YoutubeDL(opts) as ydl:
+                    ydl.extract_info(url, download=True)
+            except Exception as e:
+                return False, str(e)
+
+            for fname in os.listdir(tmp_dir):
+                if fname.lower().endswith(".mp3"):
+                    return True, os.path.join(tmp_dir, fname)
+            return False, "no mp3 produced"
+
+        return await utils.run_sync(_job)
 
     def _extract_yt_url(self, raw: str, reply_text: str | None = None) -> str | None:
         blob = (raw or "").strip()
@@ -279,15 +336,6 @@ class ConverterMod(loader.Module):
             )
             return
 
-        ytdlp_cmd = await self._resolve_ytdlp_cmd()
-        if not ytdlp_cmd:
-            await utils.answer(
-                message,
-                f"{EMOJI_ERROR} <b>yt-dlp не найден.</b>\n"
-                f"Установи в окружение юзербота: <code>python -m pip install -U yt-dlp</code>",
-            )
-            return
-
         await utils.answer(message, f"{EMOJI_LOADING} <b>Пока работаю, попей кофе. Шучу... {EMOJI_SMEX}</b>")
 
         tmp_dir = tempfile.mkdtemp(prefix="ytmp3_")
@@ -295,32 +343,47 @@ class ConverterMod(loader.Module):
         out_mp3 = None
 
         try:
-            cmd = self._build_ytdlp_cmd(ytdlp_cmd, out_tpl, url)
-            rc, stdout, stderr = await self._run(*cmd)
-            if rc != 0:
-                err_tail = (stderr or stdout or "unknown error")[-900:]
-                if "Sign in to confirm you" in err_tail or "not a bot" in err_tail:
-                    err_tail += (
-                        "\n\nПодсказка: YouTube требует cookies.\n"
-                        "Экспортируй cookies.txt и укажи путь в .config Converter -> yt_cookies_path"
+            # 1) Основной путь: python API yt_dlp (как в классическом ytdl модуле)
+            ok_lib, payload = await self._download_with_ytdlp_lib(url, tmp_dir, out_tpl)
+            if ok_lib:
+                out_mp3 = payload
+            else:
+                # 2) Резерв: CLI yt-dlp
+                ytdlp_cmd = await self._resolve_ytdlp_cmd()
+                if not ytdlp_cmd:
+                    await utils.answer(
+                        message,
+                        f"{EMOJI_ERROR} <b>yt-dlp не найден.</b>\n"
+                        f"Установи в окружение юзербота: <code>python -m pip install -U yt-dlp</code>",
                     )
-                await utils.answer(
-                    message,
-                    f"{EMOJI_ERROR} <b>Ошибка скачивания YouTube.</b>\n<code>{err_tail}</code>",
-                )
-                return
+                    return
+                cmd = self._build_ytdlp_cmd(ytdlp_cmd, out_tpl, url)
+                rc, stdout, stderr = await self._run(*cmd)
+                if rc != 0:
+                    err_tail = (stderr or stdout or payload or "unknown error")[-900:]
+                    if "Sign in to confirm you" in err_tail or "not a bot" in err_tail:
+                        err_tail += (
+                            "\n\nПодсказка: YouTube требует cookies.\n"
+                            "Экспортируй cookies.txt и укажи путь в .config Converter -> yt_cookies_path\n"
+                            "И открой .chelp"
+                        )
+                    await utils.answer(
+                        message,
+                        f"{EMOJI_ERROR} <b>Ошибка скачивания YouTube.</b>\n<code>{err_tail}</code>",
+                    )
+                    return
 
-            lines = [x.strip() for x in (stdout or "").splitlines() if x.strip()]
-            for ln in reversed(lines):
-                if ln.lower().endswith(".mp3") and os.path.exists(ln):
-                    out_mp3 = ln
-                    break
-
-            if not out_mp3:
-                for fname in os.listdir(tmp_dir):
-                    if fname.lower().endswith(".mp3"):
-                        out_mp3 = os.path.join(tmp_dir, fname)
+                lines = [x.strip() for x in (stdout or "").splitlines() if x.strip()]
+                for ln in reversed(lines):
+                    if ln.lower().endswith(".mp3") and os.path.exists(ln):
+                        out_mp3 = ln
                         break
+
+                if not out_mp3:
+                    for fname in os.listdir(tmp_dir):
+                        if fname.lower().endswith(".mp3"):
+                            out_mp3 = os.path.join(tmp_dir, fname)
+                            break
 
             if not out_mp3 or not os.path.exists(out_mp3):
                 await utils.answer(
