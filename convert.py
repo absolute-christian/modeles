@@ -16,14 +16,18 @@ from .. import loader, utils
 
 logger = logging.getLogger(__name__)
 
-EMOJI_LOADING = '<tg-emoji emoji-id="5379916721194805395">❤️</tg-emoji>'
-EMOJI_DONE    = '<tg-emoji emoji-id="5350369351948081060">🤩</tg-emoji>'
-EMOJI_ERROR   = '<tg-emoji emoji-id="5204350290769229964">❤️</tg-emoji>'
+EMOJI_LOADING  = '<tg-emoji emoji-id="5379916721194805395">❤️</tg-emoji>'
+EMOJI_DONE     = '<tg-emoji emoji-id="5350369351948081060">🤩</tg-emoji>'
+EMOJI_ERROR    = '<tg-emoji emoji-id="5204350290769229964">❤️</tg-emoji>'
+EMOJI_SMEX     = '<tg-emoji emoji-id="5267032121523863056">😂</tg-emoji>'
+EMOJI_TAG      = '<tg-emoji emoji-id="5269764708566599413">🤔</tg-emoji>'
+EMOJI_COVER    = '<tg-emoji emoji-id="5422814644093868925">👨‍💻</tg-emoji>'
+EMOJI_COMMANDS = '<tg-emoji emoji-id="5377835775180155940">❤️</tg-emoji>'
 
 
 @loader.tds
 class ConverterMod(loader.Module):
-    """Конвертит MP4 в MP3. Умеет скачивать MP3 с видео ютуба (по ссылке)."""
+    """Конвертит мп4 в мп3. Умеет скачивать звук видоса ютуба (по ссылке)."""
 
     strings = {"name": "Converter"}
 
@@ -72,22 +76,22 @@ class ConverterMod(loader.Module):
     # .convert - конвертирует MP4 в MP3
     @loader.command()
     async def convertcmd(self, message):
-        """Конвертирует MP4 видео в MP3 аудио."""
+        """Конвертит мп4 в мп3"""
         reply = await message.get_reply_message()
 
         if not reply or not reply.video and not (reply.document and reply.document.mime_type == "video/mp4"):
             await utils.answer(
                 message,
-                f"{EMOJI_ERROR} <b>Ответь на видео-сообщение командой .convert</b>",
+                f"{EMOJI_ERROR} <b>Ответь на видео командой .convert</b>",
             )
             return
 
-        await utils.answer(message, f"{EMOJI_LOADING} <b>Скачиваю видео…</b>")
+        await utils.answer(message, f"{EMOJI_LOADING} <b>Пока скачивается, попей молоко. Шучу... {EMOJI_SMEX}</b>")
 
         if not await self._check_ffmpeg():
             await utils.answer(
                 message,
-                f"{EMOJI_ERROR} <b>ffmpeg не найден.</b>\nУстанови его: <code>apt install ffmpeg</code>",
+                f"{EMOJI_ERROR} <b>Библиотека ffmpeg не найден.</b>",
             )
             return
 
@@ -99,7 +103,7 @@ class ConverterMod(loader.Module):
         try:
             await reply.download_media(video_path)
 
-            await utils.answer(message, f"{EMOJI_LOADING} <b>Конвертирую…</b>")
+            await utils.answer(message, f"{EMOJI_LOADING} <b>Пока грузится, попей чай. Шучу... {EMOJI_SMEX}</b>")
 
             rc, _, err = await self._run(
                 "ffmpeg", "-y", "-i", video_path,
@@ -127,8 +131,8 @@ class ConverterMod(loader.Module):
                 audio = MP3(mp3_path)
                 audio.add_tags()
 
-            audio.tags.add(TIT2(encoding=3, text="Без названия"))
-            audio.tags.add(TPE1(encoding=3, text="Неизвестный"))
+            audio.tags.add(TIT2(encoding=3, text="Ноунейм"))
+            audio.tags.add(TPE1(encoding=3, text="Хз кто"))
 
             if has_thumb:
                 with open(thumb_path, "rb") as f:
@@ -144,7 +148,7 @@ class ConverterMod(loader.Module):
 
             audio.save()
 
-            await utils.answer(message, f"{EMOJI_LOADING} <b>Отправляю…</b>")
+            await utils.answer(message, f"{EMOJI_LOADING} <b>Отправляется...</b>")
 
             thumb_arg = open(thumb_path, "rb") if has_thumb else None
             try:
@@ -153,7 +157,7 @@ class ConverterMod(loader.Module):
                     mp3_path,
                     voice_note=False,
                     attributes=[],
-                    caption=f"{EMOJI_DONE} <b>Готово!</b> Используй <code>.settag</code> чтобы задать название/исполнителя.",
+                    caption=f"{EMOJI_DONE} <b>Вот файл.</b> Используй <code>.settag</code> чтобы редактнуть название/исполнителя.",
                     parse_mode="html",
                     thumb=thumb_arg,
                 )
@@ -166,7 +170,7 @@ class ConverterMod(loader.Module):
         except asyncio.TimeoutError:
             await utils.answer(
                 message,
-                f"{EMOJI_ERROR} <b>Таймаут.</b> Видео слишком большое или сервер занят.",
+                f"{EMOJI_ERROR} <b>Пизда.</b> Видео слишком большое или сервер занят.",
             )
         except Exception as e:
             logger.exception("convert error")
@@ -188,7 +192,7 @@ class ConverterMod(loader.Module):
     # .ytmp3 - скачивает MP3 из YouTube
     @loader.command()
     async def ytmp3cmd(self, message):
-        """Скачивает MP3 из YouTube по ссылке."""
+        """Скачивает звук видоса с ютуба"""
         reply = await message.get_reply_message()
         raw = utils.get_args_raw(message) or ""
         reply_text = getattr(reply, "raw_text", None) if reply else None
@@ -197,16 +201,16 @@ class ConverterMod(loader.Module):
         if not url:
             await utils.answer(
                 message,
-                f"{EMOJI_ERROR} <b>Укажи YouTube ссылку:</b>\n"
+                f"{EMOJI_ERROR} <b>Укажи ссылку YouTube:</b>\n"
                 f"<code>.ytmp3 https://youtu.be/...</code>\n"
-                f"<i>или ответь на сообщение с ссылкой.</i>",
+                f"<i>или ответь командой на сообщение с ссылкой.</i>",
             )
             return
 
         if not await self._check_ffmpeg():
             await utils.answer(
                 message,
-                f"{EMOJI_ERROR} <b>ffmpeg не найден.</b>\nУстанови: <code>apt install ffmpeg</code>",
+                f"{EMOJI_ERROR} <b>Библиотека ffmpeg не найден.</b>",
             )
             return
 
@@ -218,7 +222,7 @@ class ConverterMod(loader.Module):
             )
             return
 
-        await utils.answer(message, f"{EMOJI_LOADING} <b>Скачиваю и конвертирую…</b>")
+        await utils.answer(message, f"{EMOJI_LOADING} <b>Пока работаю, попей кофе. Шучу... {EMOJI_SMEX}</b>")
 
         tmp_dir = tempfile.mkdtemp(prefix="ytmp3_")
         out_tpl = os.path.join(tmp_dir, "%(title).200s [%(id)s].%(ext)s")
@@ -264,16 +268,16 @@ class ConverterMod(loader.Module):
             if not out_mp3 or not os.path.exists(out_mp3):
                 await utils.answer(
                     message,
-                    f"{EMOJI_ERROR} <b>Не удалось найти итоговый MP3-файл.</b>",
+                    f"{EMOJI_ERROR} <b>Не удалось найти итоговый мп3-файл.</b>",
                 )
                 return
 
-            await utils.answer(message, f"{EMOJI_LOADING} <b>Отправляю MP3…</b>")
+            await utils.answer(message, f"{EMOJI_LOADING} <b>Пока отправляю мп3, попей воды. Шучу... {EMOJI_SMEX}</b>")
             await message.client.send_file(
                 message.chat_id,
                 out_mp3,
                 voice_note=False,
-                caption=f"{EMOJI_DONE} <b>Готово! YouTube → MP3</b>",
+                caption=f"{EMOJI_DONE} <b>Готово. Скачал видео из ютуба и конвертировал в мп3</b>",
                 parse_mode="html",
             )
             await message.delete()
@@ -281,7 +285,7 @@ class ConverterMod(loader.Module):
         except asyncio.TimeoutError:
             await utils.answer(
                 message,
-                f"{EMOJI_ERROR} <b>Таймаут.</b> Видео слишком длинное или сервер занят.",
+                f"{EMOJI_ERROR} <b>Бляя...</b> Видео слишком длинное или сервер занят.",
             )
         except Exception as e:
             logger.exception("ytmp3 error")
@@ -298,7 +302,7 @@ class ConverterMod(loader.Module):
     # .settag - редактирует теги MP3
     @loader.command()
     async def settagcmd(self, message):
-        """Редактирует title/artist/cover у MP3."""
+        """Редактирует название, исполнителя, обложку музыки."""
         args = (utils.get_args_raw(message) or "").strip()
         reply = await message.get_reply_message()
         chat_id = message.chat_id
@@ -329,14 +333,14 @@ class ConverterMod(loader.Module):
             if not target_audio:
                 await utils.answer(
                     message,
-                    f"{EMOJI_ERROR} <b>Ответь на MP3-аудио командой .settag</b>",
+                    f"{EMOJI_ERROR} <b>Ответь на мп3 командой .settag</b>",
                 )
                 return
 
             session = self._edit_sessions.setdefault(chat_id, {"reply_id": target_audio.id})
             session["reply_id"] = target_audio.id
 
-            await utils.answer(message, f"{EMOJI_LOADING} <b>Читаю теги…</b>")
+            await utils.answer(message, f"{EMOJI_TAG} <b>Смотрю че там в музыке...</b>")
             tmp = tempfile.mktemp(suffix=".mp3")
             try:
                 await target_audio.download_media(tmp)
@@ -375,12 +379,12 @@ class ConverterMod(loader.Module):
                 await utils.answer(message, f"{EMOJI_ERROR} <b>Укажи название:</b> <code>.settag title Название</code>")
                 return
             if not target_audio:
-                await utils.answer(message, f"{EMOJI_ERROR} <b>Сначала ответь на MP3 командой .settag title ...</b>")
+                await utils.answer(message, f"{EMOJI_ERROR} <b>Сначала ответь на мп3 командой .settag title ...</b>")
                 return
             session = self._edit_sessions.setdefault(chat_id, {"reply_id": target_audio.id})
             session["reply_id"] = target_audio.id
             session["title"] = value
-            await utils.answer(message, f"{EMOJI_DONE} <b>Название сохранено:</b> {value}\nПрименить: <code>.settag apply</code>")
+            await utils.answer(message, f"{EMOJI_DONE} <b>Название сохранено:</b> {value}\nЧтобы получить готовый мп3, введи <code>.settag apply</code>")
             return
 
         if cmd == "artist":
@@ -388,17 +392,17 @@ class ConverterMod(loader.Module):
                 await utils.answer(message, f"{EMOJI_ERROR} <b>Укажи исполнителя:</b> <code>.settag artist Исполнитель</code>")
                 return
             if not target_audio:
-                await utils.answer(message, f"{EMOJI_ERROR} <b>Сначала ответь на MP3 командой .settag artist ...</b>")
+                await utils.answer(message, f"{EMOJI_ERROR} <b>Сначала ответь на мп3 командой .settag artist ...</b>")
                 return
             session = self._edit_sessions.setdefault(chat_id, {"reply_id": target_audio.id})
             session["reply_id"] = target_audio.id
             session["artist"] = value
-            await utils.answer(message, f"{EMOJI_DONE} <b>Исполнитель сохранён:</b> {value}\nПрименить: <code>.settag apply</code>")
+            await utils.answer(message, f"{EMOJI_DONE} <b>Исполнитель сохранён:</b> {value}\nЧтобы получить готовый мп3, введи <code>.settag apply</code>")
             return
 
         if cmd == "cover":
             if not target_audio:
-                await utils.answer(message, f"{EMOJI_ERROR} <b>Сначала привяжи MP3: .settag title ... (ответом на аудио)</b>")
+                await utils.answer(message, f"{EMOJI_ERROR} <b>Сначала открой настройки мп3: .settag title ... (ответом на музыку)</b>")
                 return
 
             photo_msg = message if getattr(message, "photo", None) else (reply if reply and getattr(reply, "photo", None) else None)
@@ -406,7 +410,7 @@ class ConverterMod(loader.Module):
                 await utils.answer(message, f"{EMOJI_ERROR} <b>Ответь командой .settag cover на фото</b>")
                 return
 
-            await utils.answer(message, f"{EMOJI_LOADING} <b>Скачиваю обложку…</b>")
+            await utils.answer(message, f"{EMOJI_COVER} <b>Смотрю на фотку и меняю иво.</b>")
             tmp_cover = tempfile.mktemp(suffix=".jpg")
             try:
                 await photo_msg.download_media(tmp_cover)
@@ -415,7 +419,7 @@ class ConverterMod(loader.Module):
                 session = self._edit_sessions.setdefault(chat_id, {"reply_id": target_audio.id})
                 session["reply_id"] = target_audio.id
                 session["cover"] = cover_data
-                await utils.answer(message, f"{EMOJI_DONE} <b>Обложка сохранена.</b>\nПрименить: <code>.settag apply</code>")
+                await utils.answer(message, f"{EMOJI_DONE} <b>Обложка сохранена.</b>\nЧтобы получить готовый мп3, введи <code>.settag apply</code>")
             except Exception as e:
                 await utils.answer(message, f"{EMOJI_ERROR} <b>Ошибка:</b> <code>{e}</code>")
             finally:
@@ -430,7 +434,7 @@ class ConverterMod(loader.Module):
             if not target_audio or not session or session.get("reply_id") != target_audio.id:
                 await utils.answer(
                     message,
-                    f"{EMOJI_ERROR} <b>Нет сохранённых изменений для этого аудио.</b>\n"
+                    f"{EMOJI_ERROR} <b>Нету никаких изминений для музыки, балбес.</b>\n"
                     f"Сначала задай <code>.settag title</code> / <code>.settag artist</code> / <code>.settag cover</code>",
                 )
                 return
@@ -517,8 +521,8 @@ class ConverterMod(loader.Module):
 
         await utils.answer(
             message,
-            f"{EMOJI_ERROR} <b>Неизвестная команда.</b>\n"
-            f"Доступно: <code>title</code>, <code>artist</code>, <code>cover</code>, <code>apply</code>",
+            f"{EMOJI_COMMANDS} <b>Каво нахуй?.</b>\n"
+            f"Доступны только эти команды - <code>title</code>, <code>artist</code>, <code>cover</code>, <code>apply</code>",
         )
 
 
