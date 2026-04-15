@@ -72,6 +72,7 @@ class ConverterMod(loader.Module):
     # .convert - конвертирует MP4 в MP3
     @loader.command()
     async def convertcmd(self, message):
+        """Конвертирует MP4 видео в MP3 аудио."""
         reply = await message.get_reply_message()
 
         if not reply or not reply.video and not (reply.document and reply.document.mime_type == "video/mp4"):
@@ -187,6 +188,7 @@ class ConverterMod(loader.Module):
     # .ytmp3 - скачивает MP3 из YouTube
     @loader.command()
     async def ytmp3cmd(self, message):
+        """Скачивает MP3 из YouTube по ссылке."""
         reply = await message.get_reply_message()
         raw = utils.get_args_raw(message) or ""
         reply_text = getattr(reply, "raw_text", None) if reply else None
@@ -296,6 +298,7 @@ class ConverterMod(loader.Module):
     # .settag - редактирует теги MP3
     @loader.command()
     async def settagcmd(self, message):
+        """Редактирует title/artist/cover у MP3."""
         args = (utils.get_args_raw(message) or "").strip()
         reply = await message.get_reply_message()
         chat_id = message.chat_id
