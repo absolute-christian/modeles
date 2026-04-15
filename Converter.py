@@ -8,6 +8,7 @@ import tempfile
 import logging
 import re
 import shutil
+import sys
 
 from mutagen.id3 import ID3, TIT2, TPE1, APIC, ID3NoHeaderError
 from mutagen.mp3 import MP3
@@ -52,11 +53,23 @@ class ConverterMod(loader.Module):
             return False
 
     async def _check_ytdlp(self) -> bool:
-        try:
-            rc, _, _ = await self._run("yt-dlp", "--version")
-            return rc == 0
-        except (FileNotFoundError, asyncio.TimeoutError):
-            return False
+        return (await self._resolve_ytdlp_cmd()) is not None
+
+    async def _resolve_ytdlp_cmd(self) -> list[str] | None:
+        candidates: list[list[str]] = []
+        bin_path = shutil.which("yt-dlp")
+        if bin_path:
+            candidates.append([bin_path])
+        candidates.append([sys.executable, "-m", "yt_dlp"])
+
+        for cmd in candidates:
+            try:
+                rc, _, _ = await self._run(*cmd, "--version")
+                if rc == 0:
+                    return cmd
+            except (FileNotFoundError, asyncio.TimeoutError):
+                continue
+        return None
 
     def _extract_yt_url(self, raw: str, reply_text: str | None = None) -> str | None:
         blob = (raw or "").strip()
@@ -215,11 +228,12 @@ class ConverterMod(loader.Module):
             )
             return
 
-        if not await self._check_ytdlp():
+        ytdlp_cmd = await self._resolve_ytdlp_cmd()
+        if not ytdlp_cmd:
             await utils.answer(
                 message,
                 f"{EMOJI_ERROR} <b>yt-dlp не найден.</b>\n"
-                f"Установи: <code>pip install -U yt-dlp</code>",
+                f"Установи в окружение юзербота: <code>python -m pip install -U yt-dlp</code>",
             )
             return
 
@@ -230,8 +244,8 @@ class ConverterMod(loader.Module):
         out_mp3 = None
 
         try:
-            rc, stdout, stderr = await self._run(
-                "yt-dlp",
+            cmd = [
+                *ytdlp_cmd,
                 "--no-playlist",
                 "-x",
                 "--audio-format",
@@ -245,7 +259,8 @@ class ConverterMod(loader.Module):
                 "-o",
                 out_tpl,
                 url,
-            )
+            ]
+            rc, stdout, stderr = await self._run(*cmd)
             if rc != 0:
                 err_tail = (stderr or stdout or "unknown error")[-900:]
                 await utils.answer(
