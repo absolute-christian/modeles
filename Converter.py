@@ -10,6 +10,7 @@ import re
 import shutil
 import sys
 import importlib
+import typing
 
 from mutagen.id3 import ID3, TIT2, TPE1, APIC, ID3NoHeaderError
 from mutagen.mp3 import MP3
