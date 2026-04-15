@@ -96,12 +96,10 @@ class ConverterMod(loader.Module):
         thumb_path = os.path.join(tmp_dir, "thumb.jpg")
 
         try:
-            # 1. Скачать видео
             await reply.download_media(video_path)
 
             await utils.answer(message, f"{EMOJI_LOADING} <b>Конвертирую…</b>")
 
-            # 2. Извлечь первый кадр → обложка
             rc, _, err = await self._run(
                 "ffmpeg", "-y", "-i", video_path,
                 "-vframes", "1", "-q:v", "2",
@@ -109,7 +107,6 @@ class ConverterMod(loader.Module):
             )
             has_thumb = rc == 0 and os.path.exists(thumb_path)
 
-            # 3. Конвертировать в MP3
             rc, _, err = await self._run(
                 "ffmpeg", "-y", "-i", video_path,
                 "-vn", "-ar", "44100", "-ac", "2", "-b:a", "192k",
@@ -123,7 +120,6 @@ class ConverterMod(loader.Module):
                 )
                 return
 
-            # 4. Прописать теги через mutagen
             try:
                 audio = MP3(mp3_path, ID3=ID3)
             except ID3NoHeaderError:
@@ -149,7 +145,6 @@ class ConverterMod(loader.Module):
 
             await utils.answer(message, f"{EMOJI_LOADING} <b>Отправляю…</b>")
 
-            # 5. Отправить как аудио (музыка, не файл)
             thumb_arg = open(thumb_path, "rb") if has_thumb else None
             try:
                 await message.client.send_file(
@@ -179,7 +174,6 @@ class ConverterMod(loader.Module):
                 f"{EMOJI_ERROR} <b>Неожиданная ошибка:</b> <code>{type(e).__name__}: {e}</code>",
             )
         finally:
-            # Чистим временные файлы
             for f in (video_path, mp3_path, thumb_path):
                 try:
                     os.remove(f)
@@ -336,8 +330,6 @@ class ConverterMod(loader.Module):
                 )
                 return
 
-            # Фиксируем текущий трек в сессии, чтобы дальше можно было
-            # делать `.settag cover` ответом на фото без повторного реплая на MP3.
             session = self._edit_sessions.setdefault(chat_id, {"reply_id": target_audio.id})
             session["reply_id"] = target_audio.id
 
@@ -454,7 +446,6 @@ class ConverterMod(loader.Module):
                 if audio.tags is None:
                     audio.add_tags()
 
-                # Меняем только те поля, которые пользователь указал; остальные сохраняются как были.
                 if "title" in session:
                     audio.tags["TIT2"] = TIT2(encoding=3, text=session["title"])
                 if "artist" in session:
