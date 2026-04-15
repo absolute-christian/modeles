@@ -1,4 +1,4 @@
-﻿# meta developer: @your_username
+﻿# meta developer: @absolute_christian
 # scope: heroku_only
 # requires: mutagen
 
@@ -22,22 +22,15 @@ EMOJI_ERROR   = '<tg-emoji emoji-id="5204350290769229964">❤️</tg-emoji>'
 
 
 @loader.tds
-class MP4toMP3Mod(loader.Module):
-    """Конвертирует MP4 → MP3 и позволяет редактировать теги треков прямо в Telegram."""
+class ConverterMod(loader.Module):
+    """Converter"""
 
-    strings = {"name": "MP4toMP3"}
+    strings = {"name": "Converter"}
 
-    # ──────────────────────────────────────────────
-    # Хранилище сессий редактирования тегов
-    # ──────────────────────────────────────────────
     def __init__(self):
         self._edit_sessions: dict[int, dict] = {}  # chat_id -> session
 
-    # ──────────────────────────────────────────────
-    # Вспомогательные утилиты
-    # ──────────────────────────────────────────────
     async def _run(self, *args) -> tuple[int, str, str]:
-        """Запустить subprocess, вернуть (returncode, stdout, stderr)."""
         proc = await asyncio.create_subprocess_exec(
             *args,
             stdout=asyncio.subprocess.PIPE,
@@ -76,12 +69,9 @@ class MP4toMP3Mod(loader.Module):
             return url
         return None
 
-    # ──────────────────────────────────────────────
-    # .convert — конвертация MP4 → MP3
-    # ──────────────────────────────────────────────
+    # .convert - конвертирует MP4 в MP3
     @loader.command()
     async def convertcmd(self, message):
-        """Ответь командой на видео. Конвертирует MP4 → MP3 (с обложкой из первого кадра)."""
         reply = await message.get_reply_message()
 
         if not reply or not reply.video and not (reply.document and reply.document.mime_type == "video/mp4"):
@@ -200,12 +190,9 @@ class MP4toMP3Mod(loader.Module):
             except OSError:
                 pass
 
-    # ──────────────────────────────────────────────
-    # .ytmp3 — скачать YouTube -> MP3
-    # ──────────────────────────────────────────────
+    # .ytmp3 - скачивает MP3 из YouTube
     @loader.command()
     async def ytmp3cmd(self, message):
-        """<url> - Скачать YouTube трек в MP3"""
         reply = await message.get_reply_message()
         raw = utils.get_args_raw(message) or ""
         reply_text = getattr(reply, "raw_text", None) if reply else None
@@ -312,20 +299,9 @@ class MP4toMP3Mod(loader.Module):
             except Exception:
                 pass
 
-    # ──────────────────────────────────────────────
-    # .settag — редактирование тегов MP3 в Telegram
-    # ──────────────────────────────────────────────
+    # .settag - редактирует теги MP3
     @loader.command()
     async def settagcmd(self, message):
-        """Ответь командой на аудио-сообщение. Запускает редактор тегов.
-
-        Использование:
-        .settag
-        .settag title Название
-        .settag artist Исполнитель
-        .settag cover  (ответом на фото)
-        .settag apply
-        """
         args = (utils.get_args_raw(message) or "").strip()
         reply = await message.get_reply_message()
         chat_id = message.chat_id
@@ -550,4 +526,5 @@ class MP4toMP3Mod(loader.Module):
             f"{EMOJI_ERROR} <b>Неизвестная команда.</b>\n"
             f"Доступно: <code>title</code>, <code>artist</code>, <code>cover</code>, <code>apply</code>",
         )
+
 
