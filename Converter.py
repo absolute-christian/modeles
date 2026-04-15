@@ -10,7 +10,6 @@ import re
 import shutil
 import sys
 import importlib
-import typing
 
 from mutagen.id3 import ID3, TIT2, TPE1, APIC, ID3NoHeaderError
 from mutagen.mp3 import MP3
@@ -124,8 +123,8 @@ class ConverterMod(loader.Module):
         cmd.extend(["-o", out_tpl, url])
         return cmd
 
-    def _build_ytdlp_opts(self, out_tpl: str) -> dict[str, typing.Any]:
-        opts: dict[str, typing.Any] = {
+    def _build_ytdlp_opts(self, out_tpl: str) -> dict:
+        opts: dict = {
             "format": "bestaudio",
             "addmetadata": True,
             "prefer_ffmpeg": True,
