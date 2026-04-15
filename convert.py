@@ -23,7 +23,7 @@ EMOJI_ERROR   = '<tg-emoji emoji-id="5204350290769229964">❤️</tg-emoji>'
 
 @loader.tds
 class ConverterMod(loader.Module):
-    """Converter"""
+    """Конвертит MP4 в MP3. Умеет скачивать MP3 с видео ютуба (по ссылке)."""
 
     strings = {"name": "Converter"}
 
