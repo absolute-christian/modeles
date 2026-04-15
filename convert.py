@@ -23,6 +23,7 @@ EMOJI_SMEX     = '<tg-emoji emoji-id="5267032121523863056">😂</tg-emoji>'
 EMOJI_TAG      = '<tg-emoji emoji-id="5269764708566599413">🤔</tg-emoji>'
 EMOJI_COVER    = '<tg-emoji emoji-id="5422814644093868925">👨‍💻</tg-emoji>'
 EMOJI_COMMANDS = '<tg-emoji emoji-id="5377835775180155940">❤️</tg-emoji>'
+EMOJI_MUSIC    = '<tg-emoji emoji-id="5312445916005826522">📋</tg-emoji>'
 
 
 @loader.tds
@@ -351,15 +352,15 @@ class ConverterMod(loader.Module):
 
                 await utils.answer(
                     message,
-                    f"🎵 <b>Текущие теги:</b>\n"
+                    f" {EMOJI_MUSIC} <b>Параметры музыки:</b>\n"
                     f"• <b>Название:</b> {title}\n"
                     f"• <b>Исполнитель:</b> {artist}\n"
                     f"• <b>Обложка:</b> {'есть' if has_cover else 'нет'}\n\n"
                     f"<b>Команды:</b>\n"
                     f"<code>.settag title Название</code>\n"
                     f"<code>.settag artist Исполнитель</code>\n"
-                    f"<code>.settag cover</code> — ответь на фото\n"
-                    f"<code>.settag apply</code> — применить",
+                    f"<code>.settag cover</code> - ответь на фото чтоб поменять обложку\n"
+                    f"<code>.settag apply</code> - получить готовый мп3",
                 )
             except Exception as e:
                 await utils.answer(message, f"{EMOJI_ERROR} <b>Ошибка чтения тегов:</b> <code>{e}</code>")
@@ -521,7 +522,7 @@ class ConverterMod(loader.Module):
 
         await utils.answer(
             message,
-            f"{EMOJI_COMMANDS} <b>Каво нахуй?.</b>\n"
+            f"{EMOJI_COMMANDS} <b>Каво нахуй?</b>\n"
             f"Доступны только эти команды - <code>title</code>, <code>artist</code>, <code>cover</code>, <code>apply</code>",
         )
 
