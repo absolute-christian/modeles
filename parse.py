@@ -50,6 +50,7 @@ class ParserMod(loader.Module):
             "<b>Всего:</b> <code>{count}</code>"
         ),
         "no_tags": "нет тегов",
+        "no_member_tag": "нету",
         "no_admin": "нет",
         "creator": "создатель",
         "admin": "админ",
@@ -119,27 +120,31 @@ class ParserMod(loader.Module):
     def _format_member(self, index, user):
         name = utils.escape_html(self._display_name(user))
         user_id = getattr(user, "id", 0)
-        tags = self._format_tags(user)
+        usernames = self._format_usernames(user)
+        member_tag = utils.escape_html(self._member_tag(user))
         admin = utils.escape_html(self._admin_title(user))
 
         return (
             f"<b>{index}.</b> <a href=\"tg://user?id={user_id}\">{name}</a>\n"
             f"   <b>ID:</b> <code>{user_id}</code>\n"
-            f"   <b>Теги:</b> {tags}\n"
+            f"   <b>ЮЗ:</b> {usernames}\n"
+            f"   <b>Тег участника:</b> <code>{member_tag}</code>\n"
             f"   <b>Админка:</b> <code>{admin}</code>"
         )
 
     def _format_member_text(self, index, user):
         name = self._display_name(user)
         user_id = getattr(user, "id", 0)
-        tags = ", ".join(f"@{username}" for username in self._usernames(user))
+        usernames = ", ".join(f"@{username}" for username in self._usernames(user))
+        member_tag = self._member_tag(user)
         admin = self._admin_title(user)
 
         return (
             f"{index}. {name}\n"
             f"   ID: {user_id}\n"
             f"   Ссылка: tg://user?id={user_id}\n"
-            f"   Теги: {tags or self.strings['no_tags']}\n"
+            f"   ЮЗ: {usernames or self.strings['no_tags']}\n"
+            f"   Тег участника: {member_tag}\n"
             f"   Админка: {admin}"
         )
 
@@ -155,7 +160,7 @@ class ParserMod(loader.Module):
             or f"User {getattr(user, 'id', 0)}"
         )
 
-    def _format_tags(self, user):
+    def _format_usernames(self, user):
         usernames = self._usernames(user)
 
         if not usernames:
@@ -184,21 +189,41 @@ class ParserMod(loader.Module):
 
         return usernames
 
+    def _member_tag(self, user):
+        participant = getattr(user, "participant", None)
+        if not participant:
+            return self.strings["no_member_tag"]
+
+        for attr in (
+            "rank",
+            "tag",
+            "label",
+            "member_tag",
+            "participant_tag",
+            "custom_title",
+        ):
+            value = getattr(participant, attr, None)
+            if value:
+                return str(value)
+
+        return self.strings["no_member_tag"]
+
     def _admin_title(self, user):
         participant = getattr(user, "participant", None)
         if not participant:
             return self.strings["no_admin"]
 
-        rank = getattr(participant, "rank", None)
-        if rank:
-            return str(rank)
-
         class_name = participant.__class__.__name__.lower()
         if "creator" in class_name:
-            return self.strings["creator"]
+            return self._member_tag(user)
 
         if "admin" in class_name:
-            return self.strings["admin"]
+            member_tag = self._member_tag(user)
+            return (
+                member_tag
+                if member_tag != self.strings["no_member_tag"]
+                else self.strings["admin"]
+            )
 
         return self.strings["no_admin"]
 
