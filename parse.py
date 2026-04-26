@@ -98,25 +98,26 @@ class ParserMod(loader.Module):
             self._format_member(index, member)
             for index, member in enumerate(members, 1)
         ]
+        txt_lines = [
+            self._format_member_text(index, member)
+            for index, member in enumerate(members, 1)
+        ]
         pages = self._make_pages(header, lines)
+        txt_file = self._build_txt_file(chat, title, len(members), admins, txt_lines)
+        caption = self.strings["file_caption"].format(chat=title, count=len(members))
 
         if len(pages) == 1:
             await utils.answer(message, pages[0])
+            await self._send_txt_file(message, txt_file, caption)
             return
 
         if getattr(self.inline, "init_complete", False):
             await self.inline.list(message, pages)
+            await self._send_txt_file(message, txt_file, caption)
             return
 
-        file_data = io.BytesIO(
-            utils.remove_html("\n\n".join(pages), keep_emojis=True).encode("utf-8")
-        )
-        file_data.name = "chat_members.txt"
-        await utils.answer_file(
-            message,
-            file_data,
-            self.strings["file_caption"].format(chat=title, count=len(members)),
-        )
+        await utils.answer(message, pages[0])
+        await self._send_txt_file(message, txt_file, caption)
 
     def _format_member(self, index, user):
         name = utils.escape_html(self._display_name(user))
@@ -129,6 +130,20 @@ class ParserMod(loader.Module):
             f"   <b>ID:</b> <code>{user_id}</code>\n"
             f"   <b>Теги:</b> {tags}\n"
             f"   <b>Админка:</b> <code>{admin}</code>"
+        )
+
+    def _format_member_text(self, index, user):
+        name = self._display_name(user)
+        user_id = getattr(user, "id", 0)
+        tags = ", ".join(f"@{username}" for username in self._usernames(user))
+        admin = self._admin_title(user)
+
+        return (
+            f"{index}. {name}\n"
+            f"   ID: {user_id}\n"
+            f"   Ссылка: tg://user?id={user_id}\n"
+            f"   Теги: {tags or self.strings['no_tags']}\n"
+            f"   Админка: {admin}"
         )
 
     def _display_name(self, user):
@@ -144,6 +159,18 @@ class ParserMod(loader.Module):
         )
 
     def _format_tags(self, user):
+        usernames = self._usernames(user)
+
+        if not usernames:
+            return f"<i>{self.strings['no_tags']}</i>"
+
+        return ", ".join(
+            f"<a href=\"https://t.me/{utils.escape_html(username)}\">"
+            f"@{utils.escape_html(username)}</a>"
+            for username in usernames
+        )
+
+    def _usernames(self, user):
         usernames = []
 
         username = getattr(user, "username", None)
@@ -158,14 +185,7 @@ class ParserMod(loader.Module):
             if username and username not in usernames:
                 usernames.append(username)
 
-        if not usernames:
-            return f"<i>{self.strings['no_tags']}</i>"
-
-        return ", ".join(
-            f"<a href=\"https://t.me/{utils.escape_html(username)}\">"
-            f"@{utils.escape_html(username)}</a>"
-            for username in usernames
-        )
+        return usernames
 
     def _admin_title(self, user):
         participant = getattr(user, "participant", None)
@@ -203,3 +223,30 @@ class ParserMod(loader.Module):
             pages.append(current)
 
         return pages
+
+    def _build_txt_file(self, chat, title, count, admins, lines):
+        chat_id = getattr(chat, "id", 0)
+        text = (
+            f"Участники чата: {utils.remove_html(title)}\n"
+            f"Всего: {count}\n"
+            f"Админов: {admins}\n\n"
+            + "\n\n".join(lines)
+        )
+
+        file_data = io.BytesIO(text.encode("utf-8"))
+        file_data.name = f"parse_{chat_id}.txt"
+        return file_data
+
+    async def _send_txt_file(self, message, file_data, caption):
+        file_data.seek(0)
+        kwargs = {}
+
+        if topic := utils.get_topic(message):
+            kwargs["reply_to"] = topic
+
+        await self._client.send_file(
+            message.peer_id,
+            file_data,
+            caption=caption,
+            **kwargs,
+        )
