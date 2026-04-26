@@ -1,10 +1,10 @@
 # ---------------------------------------------------------------------------------
-# Name: ChatParser
-# Description: Export chat members with usernames, admin titles and permanent links
-# Author: @codrago_m
+# Name: Parser
+# Description: Парсит юзы и ид участников чатов
+# Author: @absolute_christian
 # ---------------------------------------------------------------------------------
-# meta developer: @codrago_m
-# scope: hikka_only
+# meta developer: @absolute_christian
+# scope: heroku
 # ---------------------------------------------------------------------------------
 
 __version__ = (1, 0, 0)
@@ -18,11 +18,11 @@ logger = logging.getLogger(__name__)
 
 
 @loader.tds
-class ChatParserMod(loader.Module):
-    """Parse chat members"""
+class ParserMod(loader.Module):
+    """Парсит участников чата: ЮЗ, ид(вечная ссылка), тег в чате"""
 
     strings = {
-        "name": "ChatParser",
+        "name": "Parser",
         "loading": (
             "<emoji document_id=5780543148782522693>🕒</emoji> "
             "<b>Загружаю участников чата...</b>"
