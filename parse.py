@@ -16,7 +16,6 @@ logger = logging.getLogger(__name__)
 
 @loader.tds
 class ParserMod(loader.Module):
-    """Парсит участников чата: ЮЗ, ид(вечная ссылка), тег в чате"""
 
     strings = {
         "name": "Parser",
@@ -56,7 +55,6 @@ class ParserMod(loader.Module):
     }
 
     async def parsecmd(self, message):
-        """| Получить список участников чата, теги, админки, ID и вечные ссылки"""
         if getattr(message, "is_private", False):
             await utils.answer(message, self.strings["not_chat"])
             return
